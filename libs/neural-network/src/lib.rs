@@ -1,5 +1,6 @@
 use rand::Rng; 
 use rand::RngCore; 
+use std::iter::once;
 
 #[derive(Debug)]
 pub struct Network {
@@ -21,6 +22,29 @@ impl Network {
             .iter()
             .fold(inputs, |inputs, layer| layer.propagate(inputs))
     }
+
+    pub fn weights(&self) -> Vec<f32> {
+        self.layers
+            .iter()
+            .flat_map(|layer| layer.neurons.iter())
+            .flat_map(|neuron| once(&neuron.bias).chain(&neuron.weights))
+            .copied()
+            .collect()
+    }
+
+    pub fn from_weights(layers: &[LayerTopology], weights: impl IntoIterator<Item = f32>) -> Self {
+        assert!(layers.len() > 1); 
+
+        let mut weights = weights.into_iter(); 
+        let layers = layers.windows(2).map(|layers| {
+            Layer::from_weights(
+                layers[0].neurons,
+                layers[1].neurons,
+                &mut weights,
+            )
+        }).collect();
+        Self { layers }
+    }
 }
 
 #[derive(Debug)]
@@ -41,6 +65,13 @@ impl Layer {
             .map(|neuron| neuron.propagate(&inputs))
             .collect()
     }
+
+    fn from_weights(input_size: usize, output_size: usize, weights: &mut dyn Iterator<Item = f32>) -> Self {
+        let neurons = (0..output_size)
+            .map(|_| Neuron::from_weights(input_size, weights))
+            .collect();
+        Self { neurons }
+    }
 }
 
 #[derive(Debug)]
@@ -51,8 +82,8 @@ struct Neuron {
 
 impl Neuron {
     fn random(rng: &mut dyn RngCore, input_size: usize) -> Self {
-        let bias = rng.random_range(-1.0..=1.0); 
-        let weights = (0..input_size).map(|_| rng.random_range(-1.0..=1.0)).collect(); 
+        let bias = rng.gen_range(-1.0..=1.0); 
+        let weights = (0..input_size).map(|_| rng.gen_range(-1.0..=1.0)).collect(); 
 
         Self { bias, weights }
     }
@@ -67,6 +98,14 @@ impl Neuron {
             .sum::<f32>();
 
         (self.bias + output).max(0.0)
+    }
+
+    fn from_weights(input_size: usize, weights: &mut dyn Iterator<Item = f32>) -> Self {
+        let bias = weights.next().expect("got not enough weights"); 
+        let weights = (0..input_size)
+            .map(|_| weights.next().expect("got not enough weights"))
+            .collect(); 
+        Self { bias, weights }
     }
 }
 
@@ -93,7 +132,7 @@ mod tests {
 
         assert_relative_eq!(
             neuron.weights.as_slice(),
-            [0.67383933, 0.81812596, 0.26284885, 0.5238805].as_ref()
+            [0.67383957, 0.8181262, 0.26284897, 0.5238807].as_ref()
         );
     }
 
